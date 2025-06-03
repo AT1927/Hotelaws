@@ -119,25 +119,26 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="space-y-4">
-                {occupancyData?.ocupacion?.map((hotel: any, index: number) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-900">{hotel.NombreHotel}</p>
-                      <p className="text-sm text-gray-600">{hotel.TotalHabitaciones} habitaciones</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-semibold text-green-600">{hotel.PorcentajeOcupacion}%</p>
-                      <div className="w-20 bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-green-500 h-2 rounded-full" 
-                          style={{ width: `${hotel.PorcentajeOcupacion}%` }}
-                        />
+                {occupancyData && occupancyData.ocupacion && Array.isArray(occupancyData.ocupacion) 
+                  ? occupancyData.ocupacion.map((hotel: any, index: number) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="font-medium text-gray-900">{hotel.NombreHotel}</p>
+                          <p className="text-sm text-gray-600">{hotel.TotalHabitaciones} habitaciones</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-semibold text-green-600">{hotel.PorcentajeOcupacion}%</p>
+                          <div className="w-20 bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-green-500 h-2 rounded-full" 
+                              style={{ width: `${hotel.PorcentajeOcupacion}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                )) || (
-                  <p className="text-center text-gray-500 py-8">No hay datos de ocupación disponibles</p>
-                )}
+                    ))
+                  : <p className="text-center text-gray-500 py-8">No hay datos de ocupación disponibles</p>
+                }
               </div>
             )}
           </CardContent>
@@ -156,20 +157,21 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="space-y-4">
-                {revenueData?.ingresos?.map((hotel: any, index: number) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-900">{hotel.NombreHotel}</p>
-                      <p className="text-sm text-gray-600">Último mes</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-semibold text-gray-900">€{hotel.TotalFacturadoPagado?.toLocaleString()}</p>
-                      <p className="text-sm text-green-600">+8%</p>
-                    </div>
-                  </div>
-                )) || (
-                  <p className="text-center text-gray-500 py-8">No hay datos de ingresos disponibles</p>
-                )}
+                {revenueData && revenueData.ingresos && Array.isArray(revenueData.ingresos)
+                  ? revenueData.ingresos.map((hotel: any, index: number) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="font-medium text-gray-900">{hotel.NombreHotel}</p>
+                          <p className="text-sm text-gray-600">Último mes</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-semibold text-gray-900">€{hotel.TotalFacturadoPagado?.toLocaleString() || "0"}</p>
+                          <p className="text-sm text-green-600">+8%</p>
+                        </div>
+                      </div>
+                    ))
+                  : <p className="text-center text-gray-500 py-8">No hay datos de ingresos disponibles</p>
+                }
               </div>
             )}
           </CardContent>

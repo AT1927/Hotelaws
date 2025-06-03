@@ -1,6 +1,6 @@
 import { apiRequest } from "./queryClient";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://7iw42r2i16.execute-api.us-east-1.amazonaws.com/dev';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://en5c7nrd9c.execute-api.us-east-1.amazonaws.com/prod';
 
 export interface ApiResponse<T> {
   message: string;
@@ -11,7 +11,12 @@ export interface ApiResponse<T> {
 // Hotels API
 export const hotelsApi = {
   create: async (hotelData: any) => {
-    const response = await apiRequest('POST', `${API_BASE_URL}/api/hotels`, hotelData);
+    const response = await fetch(`${API_BASE_URL}/api/hotels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(hotelData)
+    });
+    if (!response.ok) throw new Error('Error al crear hotel');
     return response.json();
   },
   getAll: async () => {
@@ -24,11 +29,21 @@ export const hotelsApi = {
 // Services API
 export const servicesApi = {
   create: async (serviceData: any) => {
-    const response = await apiRequest('POST', `${API_BASE_URL}/api/services/add`, serviceData);
+    const response = await fetch(`${API_BASE_URL}/api/services/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(serviceData)
+    });
+    if (!response.ok) throw new Error('Error al crear servicio');
     return response.json();
   },
   assign: async (assignData: { HotelID: number; ServicioID: number }) => {
-    const response = await apiRequest('POST', `${API_BASE_URL}/api/services/assign`, assignData);
+    const response = await fetch(`${API_BASE_URL}/api/services/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(assignData)
+    });
+    if (!response.ok) throw new Error('Error al asignar servicio');
     return response.json();
   },
   getAll: async () => {

@@ -12,9 +12,9 @@ import { roomsApi } from "@/lib/api";
 
 export function Rooms() {
   const [filters, setFilters] = useState({
-    hotel: "",
-    tipo: "",
-    estado: "",
+    hotel: "all",
+    tipo: "all",
+    estado: "all",
   });
 
   const { data: unreservedRooms, isLoading } = useQuery({
@@ -93,7 +93,7 @@ export function Rooms() {
                   <SelectValue placeholder="Todos los hoteles" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos los hoteles</SelectItem>
+                  <SelectItem value="all">Todos los hoteles</SelectItem>
                   <SelectItem value="majestic">Hotel Majestic</SelectItem>
                   <SelectItem value="costa">Hotel Costa Azul</SelectItem>
                   <SelectItem value="urbano">Hotel Urbano</SelectItem>
@@ -107,7 +107,7 @@ export function Rooms() {
                   <SelectValue placeholder="Todos los tipos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos los tipos</SelectItem>
+                  <SelectItem value="all">Todos los tipos</SelectItem>
                   <SelectItem value="suite">Suite</SelectItem>
                   <SelectItem value="doble">Doble</SelectItem>
                   <SelectItem value="individual">Individual</SelectItem>
@@ -121,7 +121,7 @@ export function Rooms() {
                   <SelectValue placeholder="Todos los estados" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos los estados</SelectItem>
+                  <SelectItem value="all">Todos los estados</SelectItem>
                   <SelectItem value="disponible">Disponible</SelectItem>
                   <SelectItem value="ocupada">Ocupada</SelectItem>
                   <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
