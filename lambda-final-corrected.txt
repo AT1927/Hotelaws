@@ -343,7 +343,7 @@ app.post('/api/employees/register', async (req, res) => {
   }
 });
 
-// 6. Buscar habitaciones disponibles
+// 6. Buscar habitaciones disponibles con WiFi opcional
 app.get('/api/habitaciones/disponibles', async (req, res) => {
   try {
     const { hotelId, capacidadMin, fechaInicio, fechaFin, wifi } = req.query;
@@ -393,13 +393,14 @@ app.get('/api/hoteles/puntuacion-media', async (req, res) => {
       SELECT 
         h.HotelID,
         h.Nombre AS NombreHotel,
-        AVG(r.Puntuacion) AS PuntuacionMedia
+        COALESCE(AVG(r.Puntuacion), 0) AS PuntuacionMedia,
+        COUNT(r.ReseñaID) AS TotalReseñas
       FROM Hoteles h
-      JOIN Habitaciones hab ON hab.HotelID = h.HotelID
-      JOIN Reservas res ON res.HabitacionID = hab.HabitacionID
-      JOIN Reseñas r ON r.ReservaID = res.ReservaID
-      WHERE r.Visible = TRUE
+      LEFT JOIN Habitaciones hab ON hab.HotelID = h.HotelID
+      LEFT JOIN Reservas res ON res.HabitacionID = hab.HabitacionID
+      LEFT JOIN Reseñas r ON r.ReservaID = res.ReservaID AND r.Visible = TRUE
       GROUP BY h.HotelID, h.Nombre
+      ORDER BY PuntuacionMedia DESC
     `);
     res.json({
       message: "Puntuación media por hotel obtenida exitosamente",
@@ -421,10 +422,15 @@ app.get('/api/habitaciones/no-reservadas', async (req, res) => {
         h.NumeroHabitacion,
         h.TipoHabitacionID,
         h.PrecioPorNoche,
-        h.Estado
+        h.Estado,
+        ho.Nombre as NombreHotel,
+        t.NombreTipo
       FROM Habitaciones h
+      LEFT JOIN Hoteles ho ON h.HotelID = ho.HotelID
+      LEFT JOIN TiposHabitacion t ON h.TipoHabitacionID = t.TipoHabitacionID
       LEFT JOIN Reservas r ON h.HabitacionID = r.HabitacionID
       WHERE r.ReservaID IS NULL
+      ORDER BY ho.Nombre, h.NumeroHabitacion
     `);
     res.json({
       message: "Habitaciones sin reservas obtenidas exitosamente",
@@ -436,7 +442,7 @@ app.get('/api/habitaciones/no-reservadas', async (req, res) => {
   }
 });
 
-// 9. Ingresos por hotel con filtros
+// 9. Ingresos por hotel con filtros mejorados
 app.get('/api/hoteles/ingresos-ultimo-mes', async (req, res) => {
   try {
     const { hotelId, fechaInicio, fechaFin } = req.query;
@@ -460,14 +466,15 @@ app.get('/api/hoteles/ingresos-ultimo-mes', async (req, res) => {
       SELECT
         h.HotelID,
         ho.Nombre AS NombreHotel,
-        SUM(f.MontoTotal) AS TotalFacturadoPagado,
+        COALESCE(SUM(f.MontoTotal), 0) AS TotalFacturadoPagado,
         COUNT(f.FacturaID) AS TotalFacturas,
-        AVG(f.MontoTotal) AS PromedioFactura
-      FROM Facturas f
-      JOIN Reservas r ON f.ReservaID = r.ReservaID
-      JOIN Habitaciones h ON r.HabitacionID = h.HabitacionID
-      JOIN Hoteles ho ON h.HotelID = ho.HotelID
-      ${whereCondition}
+        COALESCE(AVG(f.MontoTotal), 0) AS PromedioFactura
+      FROM Hoteles ho
+      LEFT JOIN Habitaciones h ON h.HotelID = ho.HotelID
+      LEFT JOIN Reservas r ON r.HabitacionID = h.HabitacionID
+      LEFT JOIN Facturas f ON f.ReservaID = r.ReservaID AND f.EstadoPago = 'Pagado'
+      ${fechaInicio && fechaFin ? 'AND f.FechaEmision BETWEEN ? AND ?' : 'AND (f.FechaEmision IS NULL OR f.FechaEmision >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH))'}
+      ${hotelId ? 'WHERE ho.HotelID = ?' : ''}
       GROUP BY h.HotelID, ho.Nombre
       ORDER BY TotalFacturadoPagado DESC
     `, params);
@@ -492,16 +499,22 @@ app.get('/api/promociones/activas-con-uso', async (req, res) => {
         p.Descripcion,
         p.DescuentoPorcentaje,
         p.DescuentoFijo,
+        p.FechaInicio,
+        p.FechaFin,
         COUNT(rp.ReservaID) AS VecesUsada
       FROM Promociones p
       LEFT JOIN ReservaPromociones rp ON p.PromocionID = rp.PromocionID
       WHERE p.Activa = TRUE
+        AND CURDATE() BETWEEN p.FechaInicio AND p.FechaFin
       GROUP BY
         p.PromocionID,
         p.CodigoPromo,
         p.Descripcion,
         p.DescuentoPorcentaje,
-        p.DescuentoFijo
+        p.DescuentoFijo,
+        p.FechaInicio,
+        p.FechaFin
+      ORDER BY VecesUsada DESC
     `);
     res.json({
       message: "Promociones activas con cantidad de usos",
@@ -513,7 +526,7 @@ app.get('/api/promociones/activas-con-uso', async (req, res) => {
   }
 });
 
-// 11. Ocupación por hotel con filtros
+// 11. Ocupación por hotel con filtros mejorados
 app.get('/api/hoteles/ocupacion-actual', async (req, res) => {
   try {
     const { hotelId, fecha } = req.query;
@@ -524,7 +537,7 @@ app.get('/api/hoteles/ocupacion-actual', async (req, res) => {
     
     if (fecha) {
       fechaCondition = "?";
-      params.unshift(fecha);
+      params.push(fecha);
     }
     
     if (hotelId) {
@@ -544,16 +557,16 @@ app.get('/api/hoteles/ocupacion-actual', async (req, res) => {
           THEN r.HabitacionID 
         END) AS HabitacionesOcupadas,
         ROUND(
-          COUNT(DISTINCT CASE 
+          COALESCE(COUNT(DISTINCT CASE 
             WHEN r.ReservaID IS NOT NULL 
             AND ${fechaCondition} BETWEEN r.FechaCheckIn AND r.FechaCheckOut
             AND r.EstadoReserva IN ('Confirmada', 'Pendiente') 
             THEN r.HabitacionID 
-          END) / COUNT(DISTINCT hab.HabitacionID) * 100, 
+          END) / NULLIF(COUNT(DISTINCT hab.HabitacionID), 0) * 100, 0), 
           2
         ) AS PorcentajeOcupacion
       FROM Hoteles h
-      JOIN Habitaciones hab ON hab.HotelID = h.HotelID
+      LEFT JOIN Habitaciones hab ON hab.HotelID = h.HotelID
       LEFT JOIN Reservas r ON r.HabitacionID = hab.HabitacionID
       ${whereCondition}
       GROUP BY h.HotelID, h.Nombre
@@ -570,7 +583,7 @@ app.get('/api/hoteles/ocupacion-actual', async (req, res) => {
   }
 });
 
-// 12. Crear reserva completa con procedimiento almacenado mejorado
+// 12. Crear reserva completa con validación mejorada
 app.post('/api/bookings/complete', async (req, res) => {
   const {
     HabitacionID,
@@ -587,9 +600,10 @@ app.post('/api/bookings/complete', async (req, res) => {
   try {
     // Validar disponibilidad de habitación
     const disponibilidad = await query(`
-      SELECT h.HabitacionID, h.PrecioPorNoche, t.NombreTipo
+      SELECT h.HabitacionID, h.PrecioPorNoche, t.NombreTipo, ho.Nombre as NombreHotel
       FROM Habitaciones h
       JOIN TiposHabitacion t ON h.TipoHabitacionID = t.TipoHabitacionID
+      JOIN Hoteles ho ON h.HotelID = ho.HotelID
       WHERE h.HabitacionID = ? 
         AND h.Estado = 'Disponible'
         AND h.HabitacionID NOT IN (
@@ -664,7 +678,9 @@ app.post('/api/bookings/complete', async (req, res) => {
       FacturaID: facturaID,
       CostoTotal: costoTotal,
       DescuentoAplicado: descuentoAplicado,
-      DiasEstancia: diasEstancia
+      DiasEstancia: diasEstancia,
+      HotelNombre: habitacion.NombreHotel,
+      TipoHabitacion: habitacion.NombreTipo
     });
 
   } catch (error) {
@@ -677,7 +693,7 @@ app.post('/api/bookings/complete', async (req, res) => {
 // ENDPOINTS PARA SCRIPTS DE BASE DE DATOS
 // ========================================
 
-// Crear trigger para actualizar puntuación media
+// Crear trigger para actualizar puntuación media automáticamente
 app.post('/api/database/create-trigger', async (req, res) => {
   try {
     const triggerSQL = `
@@ -689,15 +705,44 @@ app.post('/api/database/create-trigger', async (req, res) => {
       BEGIN
           DECLARE hotel_id INT;
           
+          -- Obtener el HotelID de la reserva
           SELECT h.HotelID INTO hotel_id
           FROM Reservas r
           JOIN Habitaciones hab ON r.HabitacionID = hab.HabitacionID
           JOIN Hoteles h ON hab.HotelID = h.HotelID
           WHERE r.ReservaID = NEW.ReservaID;
           
+          -- Actualizar la puntuación media del hotel
           UPDATE Hoteles 
           SET PuntuacionMedia = (
-              SELECT AVG(res.Puntuacion)
+              SELECT COALESCE(AVG(res.Puntuacion), 0)
+              FROM Reseñas res
+              JOIN Reservas r ON res.ReservaID = r.ReservaID
+              JOIN Habitaciones hab ON r.HabitacionID = hab.HabitacionID
+              WHERE hab.HotelID = hotel_id AND res.Visible = TRUE
+          )
+          WHERE HotelID = hotel_id;
+      END;
+      
+      DROP TRIGGER IF EXISTS tr_actualizar_puntuacion_hotel_update;
+      
+      CREATE TRIGGER tr_actualizar_puntuacion_hotel_update
+      AFTER UPDATE ON Reseñas
+      FOR EACH ROW
+      BEGIN
+          DECLARE hotel_id INT;
+          
+          -- Obtener el HotelID de la reserva
+          SELECT h.HotelID INTO hotel_id
+          FROM Reservas r
+          JOIN Habitaciones hab ON r.HabitacionID = hab.HabitacionID
+          JOIN Hoteles h ON hab.HotelID = h.HotelID
+          WHERE r.ReservaID = NEW.ReservaID;
+          
+          -- Actualizar la puntuación media del hotel
+          UPDATE Hoteles 
+          SET PuntuacionMedia = (
+              SELECT COALESCE(AVG(res.Puntuacion), 0)
               FROM Reseñas res
               JOIN Reservas r ON res.ReservaID = r.ReservaID
               JOIN Habitaciones hab ON r.HabitacionID = hab.HabitacionID
@@ -710,11 +755,11 @@ app.post('/api/database/create-trigger', async (req, res) => {
     await query(triggerSQL);
     
     res.json({
-      message: 'Trigger para actualización de puntuación media creado exitosamente'
+      message: 'Triggers para actualización automática de puntuación media creados exitosamente'
     });
   } catch (error) {
-    console.error('Error creando trigger:', error);
-    res.status(500).json({ message: 'Error creando trigger', error: error.message });
+    console.error('Error creando triggers:', error);
+    res.status(500).json({ message: 'Error creando triggers', error: error.message });
   }
 });
 

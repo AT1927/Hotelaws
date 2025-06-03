@@ -1,47 +1,23 @@
 import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Calendar, Eye, Edit } from "lucide-react";
+import { Plus, Calendar, Eye, Edit, Loader2 } from "lucide-react";
 import { ReservationModal } from "@/components/modals/reservation-modal";
+import { reservationsApi } from "@/lib/api";
 
 export function Reservations() {
   const [showModal, setShowModal] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Mock reservation data
-  const reservations = [
-    {
-      id: "RSV-001",
-      cliente: "María González",
-      hotel: "Hotel Majestic",
-      habitacion: "205",
-      checkIn: "15/12/2024",
-      checkOut: "18/12/2024",
-      estado: "Confirmada",
-      total: 540
-    },
-    {
-      id: "RSV-002",
-      cliente: "Carlos Rodríguez",
-      hotel: "Hotel Costa Azul",
-      habitacion: "103",
-      checkIn: "20/12/2024",
-      checkOut: "22/12/2024",
-      estado: "Pendiente",
-      total: 240
-    },
-    {
-      id: "RSV-003",
-      cliente: "Ana Martín",
-      hotel: "Hotel Urbano",
-      habitacion: "301",
-      checkIn: "25/12/2024",
-      checkOut: "27/12/2024",
-      estado: "Cancelada",
-      total: 170
-    }
-  ];
+  const { data: reservationData, isLoading, error } = useQuery({
+    queryKey: ['/api/reservations'],
+    queryFn: () => reservationsApi.getAll(),
+  });
+
+  const reservations = reservationData?.reservas || [];
 
   const getStatusColor = (estado: string) => {
     switch (estado) {
