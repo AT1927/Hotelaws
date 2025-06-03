@@ -100,13 +100,30 @@ export const rolesApi = {
 
 // Rooms API
 export const roomsApi = {
-  getAvailable: async (params: { hotelId: number; capacidadMin: number; fechaInicio: string; fechaFin: string }) => {
+  getAll: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/rooms`);
+    if (!response.ok) throw new Error('Error al cargar habitaciones');
+    return response.json();
+  },
+  create: async (roomData: any) => {
+    const response = await fetch(`${API_BASE_URL}/api/rooms/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(roomData)
+    });
+    if (!response.ok) throw new Error('Error al crear habitación');
+    return response.json();
+  },
+  getAvailable: async (params: { hotelId: number; capacidadMin: number; fechaInicio: string; fechaFin: string; wifi?: boolean }) => {
     const queryParams = new URLSearchParams({
       hotelId: params.hotelId.toString(),
       capacidadMin: params.capacidadMin.toString(),
       fechaInicio: params.fechaInicio,
       fechaFin: params.fechaFin
     });
+    if (params.wifi) {
+      queryParams.append('wifi', 'true');
+    }
     const response = await fetch(`${API_BASE_URL}/api/habitaciones/disponibles?${queryParams}`);
     if (!response.ok) throw new Error('Error al buscar habitaciones disponibles');
     return response.json();
@@ -114,6 +131,15 @@ export const roomsApi = {
   getUnreserved: async () => {
     const response = await fetch(`${API_BASE_URL}/api/habitaciones/no-reservadas`);
     if (!response.ok) throw new Error('Error al cargar habitaciones sin reservas');
+    return response.json();
+  }
+};
+
+// Room Types API
+export const roomTypesApi = {
+  getAll: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/room-types`);
+    if (!response.ok) throw new Error('Error al cargar tipos de habitación');
     return response.json();
   }
 };

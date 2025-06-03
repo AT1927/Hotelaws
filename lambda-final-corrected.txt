@@ -165,6 +165,20 @@ app.get('/api/hotels/:hotelId/services', async (req, res) => {
   }
 });
 
+// Obtener todos los tipos de habitación
+app.get('/api/room-types', async (req, res) => {
+  try {
+    const tiposHabitacion = await query('SELECT * FROM TiposHabitacion ORDER BY NombreTipo');
+    res.json({
+      message: 'Tipos de habitación obtenidos exitosamente',
+      tiposHabitacion
+    });
+  } catch (error) {
+    console.error('Error obteniendo tipos de habitación:', error);
+    res.status(500).json({ error: 'Error al obtener tipos de habitación', details: error.message });
+  }
+});
+
 // ========================================
 // ENDPOINTS EXISTENTES (CREATE)
 // ========================================
@@ -340,6 +354,66 @@ app.post('/api/employees/register', async (req, res) => {
   } catch (error) {
     console.error('Error registrando empleado:', error);
     res.status(500).json({ message: 'Error al registrar empleado', error: error.message });
+  }
+});
+
+// 5.1. Crear nueva habitación
+app.post('/api/rooms/create', async (req, res) => {
+  try {
+    const {
+      HotelID,
+      TipoHabitacionID,
+      NumeroHabitacion,
+      PrecioPorNoche,
+      Estado = 'Disponible'
+    } = req.body;
+
+    if (!HotelID || !TipoHabitacionID || !NumeroHabitacion || !PrecioPorNoche) {
+      return res.status(400).json({ error: 'HotelID, TipoHabitacionID, NumeroHabitacion y PrecioPorNoche son obligatorios' });
+    }
+
+    // Validar que el hotel existe
+    const hotel = await query('SELECT * FROM Hoteles WHERE HotelID = ?', [HotelID]);
+    if (hotel.length === 0) {
+      return res.status(404).json({ error: 'Hotel no encontrado' });
+    }
+
+    // Validar que el tipo de habitación existe
+    const tipoHabitacion = await query('SELECT * FROM TiposHabitacion WHERE TipoHabitacionID = ?', [TipoHabitacionID]);
+    if (tipoHabitacion.length === 0) {
+      return res.status(404).json({ error: 'Tipo de habitación no encontrado' });
+    }
+
+    // Validar que el número de habitación no exista en el hotel
+    const habitacionExistente = await query(
+      'SELECT * FROM Habitaciones WHERE HotelID = ? AND NumeroHabitacion = ?',
+      [HotelID, NumeroHabitacion]
+    );
+    if (habitacionExistente.length > 0) {
+      return res.status(409).json({ error: 'Ya existe una habitación con este número en el hotel' });
+    }
+
+    const result = await query(`
+      INSERT INTO Habitaciones (HotelID, TipoHabitacionID, NumeroHabitacion, PrecioPorNoche, Estado)
+      VALUES (?, ?, ?, ?, ?)
+    `, [HotelID, TipoHabitacionID, NumeroHabitacion, PrecioPorNoche, Estado]);
+
+    const habitacionCreada = await query(`
+      SELECT h.*, ho.Nombre as NombreHotel, t.NombreTipo, t.CapacidadMax
+      FROM Habitaciones h
+      LEFT JOIN Hoteles ho ON h.HotelID = ho.HotelID
+      LEFT JOIN TiposHabitacion t ON h.TipoHabitacionID = t.TipoHabitacionID
+      WHERE h.HabitacionID = ?
+    `, [result.insertId]);
+
+    res.status(201).json({
+      message: 'Habitación creada exitosamente',
+      habitacion: habitacionCreada[0]
+    });
+
+  } catch (error) {
+    console.error('Error creando habitación:', error);
+    res.status(500).json({ error: 'Error interno al crear habitación', details: error.message });
   }
 });
 
