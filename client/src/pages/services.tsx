@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Wifi, WavesLadder, Utensils, Bath } from "lucide-react";
+import { Plus, Wifi, Waves, Utensils, Bath } from "lucide-react";
 import { ServiceModal } from "@/components/modals/service-modal";
 
 export function Services() {
@@ -27,7 +27,7 @@ export function Services() {
       descripcion: "Piscina al aire libre con área de relajación y servicio de toallas.",
       hotelesActivos: 2,
       estado: "Activo",
-      icon: WavesLadder,
+      icon: Waves,
       color: "success"
     },
     {
