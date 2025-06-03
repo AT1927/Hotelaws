@@ -1,0 +1,560 @@
+const express = require('express');
+const serverless = require('serverless-http');
+const cors = require('cors');
+const mysql = require('mysql2/promise');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  ssl: { rejectUnauthorized: false },
+  multipleStatements: true
+});
+
+const query = async (sql, params) => {
+  const [rows] = await pool.execute(sql, params);
+  return rows;
+};
+
+// ========================================
+// ENDPOINTS PARA OBTENER DATOS (GET)
+// ========================================
+
+// Obtener todos los hoteles
+app.get('/api/hotels', async (req, res) => {
+  try {
+    const hoteles = await query('SELECT * FROM Hoteles ORDER BY Nombre');
+    res.json({
+      message: 'Hoteles obtenidos exitosamente',
+      hoteles
+    });
+  } catch (error) {
+    console.error('Error obteniendo hoteles:', error);
+    res.status(500).json({ error: 'Error al obtener hoteles', details: error.message });
+  }
+});
+
+// Obtener todos los servicios
+app.get('/api/services', async (req, res) => {
+  try {
+    const servicios = await query('SELECT * FROM Servicios ORDER BY NombreServicio');
+    res.json({
+      message: 'Servicios obtenidos exitosamente',
+      servicios
+    });
+  } catch (error) {
+    console.error('Error obteniendo servicios:', error);
+    res.status(500).json({ error: 'Error al obtener servicios', details: error.message });
+  }
+});
+
+// Obtener todos los empleados con información de hotel y rol
+app.get('/api/employees', async (req, res) => {
+  try {
+    const empleados = await query(`
+      SELECT e.*, h.Nombre as NombreHotel, r.NombreRol 
+      FROM Empleados e 
+      LEFT JOIN Hoteles h ON e.HotelID = h.HotelID 
+      LEFT JOIN Roles r ON e.RolID = r.RolID 
+      ORDER BY e.Nombre, e.Apellido
+    `);
+    res.json({
+      message: 'Empleados obtenidos exitosamente',
+      empleados
+    });
+  } catch (error) {
+    console.error('Error obteniendo empleados:', error);
+    res.status(500).json({ error: 'Error al obtener empleados', details: error.message });
+  }
+});
+
+// Obtener todos los roles
+app.get('/api/roles', async (req, res) => {
+  try {
+    const roles = await query('SELECT * FROM Roles ORDER BY NombreRol');
+    res.json({
+      message: 'Roles obtenidos exitosamente',
+      roles
+    });
+  } catch (error) {
+    console.error('Error obteniendo roles:', error);
+    res.status(500).json({ error: 'Error al obtener roles', details: error.message });
+  }
+});
+
+// Obtener todas las habitaciones con información de hotel y tipo
+app.get('/api/rooms', async (req, res) => {
+  try {
+    const habitaciones = await query(`
+      SELECT hab.*, h.Nombre as NombreHotel, t.NombreTipo, t.CapacidadMax
+      FROM Habitaciones hab
+      LEFT JOIN Hoteles h ON hab.HotelID = h.HotelID
+      LEFT JOIN TiposHabitacion t ON hab.TipoHabitacionID = t.TipoHabitacionID
+      ORDER BY h.Nombre, hab.NumeroHabitacion
+    `);
+    res.json({
+      message: 'Habitaciones obtenidas exitosamente',
+      habitaciones
+    });
+  } catch (error) {
+    console.error('Error obteniendo habitaciones:', error);
+    res.status(500).json({ error: 'Error al obtener habitaciones', details: error.message });
+  }
+});
+
+// Obtener todas las reservas con información detallada
+app.get('/api/reservations', async (req, res) => {
+  try {
+    const reservas = await query(`
+      SELECT r.*, c.Nombre as NombreCliente, c.Apellido as ApellidoCliente,
+             h.Nombre as NombreHotel, hab.NumeroHabitacion
+      FROM Reservas r
+      LEFT JOIN Clientes c ON r.ClienteID = c.ClienteID
+      LEFT JOIN Habitaciones hab ON r.HabitacionID = hab.HabitacionID
+      LEFT JOIN Hoteles h ON hab.HotelID = h.HotelID
+      ORDER BY r.FechaReserva DESC
+    `);
+    res.json({
+      message: 'Reservas obtenidas exitosamente',
+      reservas
+    });
+  } catch (error) {
+    console.error('Error obteniendo reservas:', error);
+    res.status(500).json({ error: 'Error al obtener reservas', details: error.message });
+  }
+});
+
+// Obtener todos los clientes
+app.get('/api/clients', async (req, res) => {
+  try {
+    const clientes = await query('SELECT * FROM Clientes ORDER BY Nombre, Apellido');
+    res.json({
+      message: 'Clientes obtenidos exitosamente',
+      clientes
+    });
+  } catch (error) {
+    console.error('Error obteniendo clientes:', error);
+    res.status(500).json({ error: 'Error al obtener clientes', details: error.message });
+  }
+});
+
+// Obtener servicios de un hotel específico
+app.get('/api/hotels/:hotelId/services', async (req, res) => {
+  try {
+    const { hotelId } = req.params;
+    const servicios = await query(`
+      SELECT s.* FROM Servicios s
+      JOIN HotelServicios hs ON s.ServicioID = hs.ServicioID
+      WHERE hs.HotelID = ?
+      ORDER BY s.NombreServicio
+    `, [hotelId]);
+    res.json({
+      message: 'Servicios del hotel obtenidos exitosamente',
+      servicios
+    });
+  } catch (error) {
+    console.error('Error obteniendo servicios del hotel:', error);
+    res.status(500).json({ error: 'Error al obtener servicios del hotel', details: error.message });
+  }
+});
+
+// ========================================
+// ENDPOINTS EXISTENTES (CREATE)
+// ========================================
+
+// 1. Registrar un nuevo Hotel
+app.post('/api/hotels', async (req, res) => {
+  try {
+    const { Nombre, Direccion, Ciudad, Pais, Telefono, EmailContacto, CategoriaEstrellas, DescripcionGeneral } = req.body;
+
+    if (!Nombre || !Direccion) {
+      return res.status(400).json({ error: 'Nombre y Dirección son obligatorios' });
+    }
+
+    const result = await query(
+      `INSERT INTO Hoteles 
+       (Nombre, Direccion, Ciudad, Pais, Telefono, EmailContacto, CategoriaEstrellas, DescripcionGeneral) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        Nombre,
+        Direccion,
+        Ciudad || null,
+        Pais || null,
+        Telefono || null,
+        EmailContacto || null,
+        CategoriaEstrellas || null,
+        DescripcionGeneral || null,
+      ]
+    );
+
+    const insertedId = result.insertId;
+    const hoteles = await query('SELECT * FROM Hoteles WHERE HotelID = ?', [insertedId]);
+
+    if (hoteles.length === 0) {
+      return res.status(404).json({ error: 'Hotel no encontrado después de insertar' });
+    }
+
+    res.status(201).json({ message: 'Hotel creado exitosamente', hotel: hoteles[0] });
+  } catch (error) {
+    console.error('Error creando hotel:', error);
+    res.status(500).json({ error: 'Error interno al crear hotel', details: error.message });
+  }
+});
+
+// 2. Añadir nuevo servicio disponible
+app.post('/api/services/add', async (req, res) => {
+  try {
+    const { NombreServicio, DescripcionServicio } = req.body;
+
+    if (!NombreServicio) {
+      return res.status(400).json({ error: 'El nombre del servicio es obligatorio' });
+    }
+
+    const result = await query(
+      'INSERT INTO Servicios (NombreServicio, DescripcionServicio) VALUES (?, ?)',
+      [NombreServicio, DescripcionServicio || null]
+    );
+
+    const insertedId = result.insertId;
+    const servicios = await query('SELECT * FROM Servicios WHERE ServicioID = ?', [insertedId]);
+
+    if (servicios.length === 0) {
+      return res.status(404).json({ error: 'Servicio no encontrado después de insertar' });
+    }
+
+    res.status(201).json({ message: 'Servicio creado exitosamente', servicio: servicios[0] });
+  } catch (error) {
+    console.error('Error creando servicio:', error);
+    res.status(500).json({ error: 'Error interno al crear servicio', details: error.message });
+  }
+});
+
+// 3. Asociar servicio a hotel
+app.post('/api/services/assign', async (req, res) => {
+  try {
+    const { HotelID, ServicioID } = req.body;
+
+    if (!HotelID || !ServicioID) {
+      return res.status(400).json({ error: 'HotelID y ServicioID son obligatorios' });
+    }
+
+    const hoteles = await query('SELECT * FROM Hoteles WHERE HotelID = ?', [HotelID]);
+    if (hoteles.length === 0) {
+      return res.status(404).json({ error: 'Hotel no encontrado' });
+    }
+
+    const servicios = await query('SELECT * FROM Servicios WHERE ServicioID = ?', [ServicioID]);
+    if (servicios.length === 0) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+
+    const existing = await query(
+      'SELECT * FROM HotelServicios WHERE HotelID = ? AND ServicioID = ?',
+      [HotelID, ServicioID]
+    );
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'El servicio ya está asociado al hotel' });
+    }
+
+    await query(
+      'INSERT INTO HotelServicios (HotelID, ServicioID) VALUES (?, ?)',
+      [HotelID, ServicioID]
+    );
+
+    res.status(201).json({ message: 'Servicio asociado al hotel exitosamente' });
+  } catch (error) {
+    console.error('Error asociando servicio al hotel:', error);
+    res.status(500).json({ error: 'Error interno al asociar servicio al hotel', details: error.message });
+  }
+});
+
+// 4. Crear promoción
+app.post('/api/promotions/create', async (req, res) => {
+  try {
+    const {
+      CodigoPromo,
+      Descripcion,
+      DescuentoPorcentaje,
+      DescuentoFijo,
+      FechaInicio,
+      FechaFin,
+      Activa
+    } = req.body;
+
+    const result = await query(`
+      INSERT INTO Promociones 
+      (CodigoPromo, Descripcion, DescuentoPorcentaje, DescuentoFijo, FechaInicio, FechaFin, Activa)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [CodigoPromo, Descripcion, DescuentoPorcentaje, DescuentoFijo, FechaInicio, FechaFin, Activa]);
+
+    const promocion = await query(`SELECT * FROM Promociones WHERE PromocionID = ?`, [result.insertId]);
+
+    res.status(201).json({
+      message: "Promoción creada exitosamente",
+      promocion: promocion[0]
+    });
+
+  } catch (error) {
+    console.error('Error creando promoción:', error);
+    res.status(500).json({ message: 'Error al crear promoción', error: error.message });
+  }
+});
+
+// 5. Registrar empleado
+app.post('/api/employees/register', async (req, res) => {
+  try {
+    const {
+      HotelID,
+      RolID,
+      Nombre,
+      Apellido,
+      Email,
+      Telefono,
+      FechaContratacion,
+      Salario
+    } = req.body;
+
+    const insertResult = await query(`
+      INSERT INTO Empleados 
+      (HotelID, RolID, Nombre, Apellido, Email, Telefono, FechaContratacion, Salario)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [HotelID, RolID, Nombre, Apellido, Email, Telefono, FechaContratacion, Salario]);
+
+    const empleadoRows = await query(
+      `SELECT * FROM Empleados WHERE EmpleadoID = ?`,
+      [insertResult.insertId]
+    );
+
+    res.status(201).json({
+      message: "Empleado registrado exitosamente",
+      empleado: empleadoRows[0]
+    });
+
+  } catch (error) {
+    console.error('Error registrando empleado:', error);
+    res.status(500).json({ message: 'Error al registrar empleado', error: error.message });
+  }
+});
+
+// 6. Buscar habitaciones disponibles
+app.get('/api/habitaciones/disponibles', async (req, res) => {
+  try {
+    const { hotelId, capacidadMin, fechaInicio, fechaFin } = req.query;
+
+    if (!hotelId || !capacidadMin || !fechaInicio || !fechaFin) {
+      return res.status(400).json({ message: 'Faltan parámetros requeridos' });
+    }
+
+    const habitaciones = await query(`
+      SELECT h.HabitacionID, h.NumeroHabitacion, t.NombreTipo, t.CapacidadMax, h.PrecioPorNoche, h.HotelID
+      FROM Habitaciones h
+      JOIN TiposHabitacion t ON h.TipoHabitacionID = t.TipoHabitacionID
+      JOIN RoomServicios rs ON h.HabitacionID = rs.HabitacionID
+      JOIN Servicios s ON rs.ServicioID = s.ServicioID
+      WHERE s.NombreServicio = 'WiFi Gratis'
+        AND h.HotelID = ?
+        AND t.CapacidadMax >= ?
+        AND h.HabitacionID NOT IN (
+          SELECT r.HabitacionID
+          FROM Reservas r
+          WHERE r.EstadoReserva IN ('Pendiente', 'Confirmada')
+            AND NOT (r.FechaCheckOut <= ? OR r.FechaCheckIn >= ?)
+        )`,
+      [hotelId, capacidadMin, fechaInicio, fechaFin]);
+
+    res.json({ habitaciones });
+  } catch (error) {
+    console.error('Error buscando habitaciones disponibles:', error);
+    res.status(500).json({ message: 'Error buscando habitaciones', error: error.message });
+  }
+});
+
+// 7. Puntuación media por hotel
+app.get('/api/hoteles/puntuacion-media', async (req, res) => {
+  try {
+    const data = await query(`
+      SELECT 
+        h.HotelID,
+        h.Nombre AS NombreHotel,
+        AVG(r.Puntuacion) AS PuntuacionMedia
+      FROM Hoteles h
+      JOIN Habitaciones hab ON hab.HotelID = h.HotelID
+      JOIN Reservas res ON res.HabitacionID = hab.HabitacionID
+      JOIN Reseñas r ON r.ReservaID = res.ReservaID
+      WHERE r.Visible = TRUE
+      GROUP BY h.HotelID, h.Nombre
+    `);
+    res.json({
+      message: "Puntuación media por hotel obtenida exitosamente",
+      data
+    });
+  } catch (error) {
+    console.error('Error obteniendo puntuación media:', error);
+    res.status(500).json({ message: 'Error al obtener puntuación media', error: error.message });
+  }
+});
+
+// 8. Habitaciones sin reservas
+app.get('/api/habitaciones/no-reservadas', async (req, res) => {
+  try {
+    const habitaciones = await query(`
+      SELECT 
+        h.HabitacionID,
+        h.HotelID,
+        h.NumeroHabitacion,
+        h.TipoHabitacionID,
+        h.PrecioPorNoche,
+        h.Estado
+      FROM Habitaciones h
+      LEFT JOIN Reservas r ON h.HabitacionID = r.HabitacionID
+      WHERE r.ReservaID IS NULL
+    `);
+    res.json({
+      message: "Habitaciones sin reservas obtenidas exitosamente",
+      habitaciones
+    });
+  } catch (error) {
+    console.error('Error obteniendo habitaciones sin reservas:', error);
+    res.status(500).json({ message: 'Error al obtener habitaciones sin reservas', error: error.message });
+  }
+});
+
+// 9. Ingresos último mes
+app.get('/api/hoteles/ingresos-ultimo-mes', async (req, res) => {
+  try {
+    const ingresos = await query(`
+      SELECT
+        h.HotelID,
+        ho.Nombre AS NombreHotel,
+        SUM(f.MontoTotal) AS TotalFacturadoPagado
+      FROM Facturas f
+      JOIN Reservas r ON f.ReservaID = r.ReservaID
+      JOIN Habitaciones h ON r.HabitacionID = h.HabitacionID
+      JOIN Hoteles ho ON h.HotelID = ho.HotelID
+      WHERE f.EstadoPago = 'Pagado'
+        AND f.FechaEmision >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+      GROUP BY h.HotelID, ho.Nombre
+    `);
+    res.json({
+      message: "Ingresos totales facturados y pagados por hotel en el último mes",
+      ingresos
+    });
+  } catch (error) {
+    console.error('Error obteniendo ingresos por hotel:', error);
+    res.status(500).json({ message: 'Error al obtener ingresos por hotel', error: error.message });
+  }
+});
+
+// 10. Promociones activas con uso
+app.get('/api/promociones/activas-con-uso', async (req, res) => {
+  try {
+    const promociones = await query(`
+      SELECT
+        p.PromocionID,
+        p.CodigoPromo,
+        p.Descripcion,
+        p.DescuentoPorcentaje,
+        p.DescuentoFijo,
+        COUNT(rp.ReservaID) AS VecesUsada
+      FROM Promociones p
+      LEFT JOIN ReservaPromociones rp ON p.PromocionID = rp.PromocionID
+      WHERE p.Activa = TRUE
+      GROUP BY
+        p.PromocionID,
+        p.CodigoPromo,
+        p.Descripcion,
+        p.DescuentoPorcentaje,
+        p.DescuentoFijo
+    `);
+    res.json({
+      message: "Promociones activas con cantidad de usos",
+      promociones
+    });
+  } catch (error) {
+    console.error('Error obteniendo promociones activas:', error);
+    res.status(500).json({ message: 'Error al obtener promociones', error: error.message });
+  }
+});
+
+// 11. Ocupación actual por hotel
+app.get('/api/hoteles/ocupacion-actual', async (req, res) => {
+  try {
+    const ocupacion = await query(`
+      SELECT 
+        h.HotelID,
+        h.Nombre AS NombreHotel,
+        COUNT(DISTINCT hab.HabitacionID) AS TotalHabitaciones,
+        COUNT(DISTINCT r.HabitacionID) AS HabitacionesOcupadas,
+        ROUND(
+          COUNT(DISTINCT r.HabitacionID) / COUNT(DISTINCT hab.HabitacionID) * 100, 
+          2
+        ) AS PorcentajeOcupacion
+      FROM Hoteles h
+      JOIN Habitaciones hab ON hab.HotelID = h.HotelID
+      LEFT JOIN Reservas r ON r.HabitacionID = hab.HabitacionID
+        AND CURDATE() BETWEEN r.FechaCheckIn AND r.FechaCheckOut
+        AND r.EstadoReserva = 'Confirmada'
+      GROUP BY h.HotelID, h.Nombre
+    `);
+    res.json({
+      message: 'Ocupación actual por hotel',
+      ocupacion
+    });
+  } catch (error) {
+    console.error('Error obteniendo ocupación:', error);
+    res.status(500).json({ message: 'Error al obtener ocupación', error: error.message });
+  }
+});
+
+// 12. Crear reserva completa
+app.post('/api/bookings/complete', async (req, res) => {
+  const {
+    HabitacionID,
+    ClienteID,
+    FechaCheckIn,
+    FechaCheckOut,
+    CodigoPromo = ''
+  } = req.body;
+
+  if (!HabitacionID || !ClienteID || !FechaCheckIn || !FechaCheckOut) {
+    return res.status(400).json({ message: 'Faltan parámetros requeridos' });
+  }
+
+  try {
+    const results = await query(
+      `CALL CrearReserva(?, ?, ?, ?, ?, @ReservaID, @FacturaID, @Mensaje);
+       SELECT @ReservaID AS ReservaID, @FacturaID AS FacturaID, @Mensaje AS Mensaje;`,
+      [HabitacionID, ClienteID, FechaCheckIn, FechaCheckOut, CodigoPromo]
+    );
+
+    const output = results[1][0];
+
+    if (!output.ReservaID) {
+      return res.status(400).json({ message: output.Mensaje });
+    }
+
+    res.status(201).json({
+      message: output.Mensaje,
+      ReservaID: output.ReservaID,
+      FacturaID: output.FacturaID
+    });
+
+  } catch (error) {
+    console.error('Error creando reserva:', error);
+    res.status(500).json({ message: 'Error interno al crear reserva', error: error.message });
+  }
+});
+
+app.use((err, req, res, next) => {
+  console.error('Error inesperado:', err);
+  res.status(500).json({ error: 'Error inesperado en el servidor', details: err.message });
+});
+
+module.exports.handler = serverless(app);
