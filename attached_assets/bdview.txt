@@ -1,0 +1,205 @@
+-- ==========================================
+-- VISTAS
+-- ==========================================
+
+-- 1. Vista de habitaciones disponibles con WiFi Gratis
+CREATE OR REPLACE VIEW Vista_HabitacionesDisponibles AS
+SELECT 
+  h.HabitacionID, 
+  h.NumeroHabitacion, 
+  t.NombreTipo, 
+  t.CapacidadMax, 
+  h.PrecioPorNoche,
+  h.HotelID
+FROM Habitaciones h
+JOIN TiposHabitacion t ON h.TipoHabitacionID = t.TipoHabitacionID
+JOIN RoomServicios rs ON h.HabitacionID = rs.HabitacionID
+JOIN Servicios s ON rs.ServicioID = s.ServicioID
+WHERE s.NombreServicio = 'WiFi Gratis'
+  AND h.HabitacionID NOT IN (
+    SELECT r.HabitacionID
+    FROM Reservas r
+    WHERE r.EstadoReserva IN ('Pendiente', 'Confirmada')
+      AND CURDATE() BETWEEN r.FechaCheckIn AND r.FechaCheckOut
+  );
+
+-- 2. Vista de puntuación media de cada hotel
+CREATE OR REPLACE VIEW Vista_PuntuacionMediaHotel AS
+SELECT 
+  h.HotelID,
+  h.Nombre AS NombreHotel,
+  AVG(r.Puntuacion) AS PuntuacionMedia
+FROM Hoteles h
+JOIN Habitaciones hab ON hab.HotelID = h.HotelID
+JOIN Reservas res ON res.HabitacionID = hab.HabitacionID
+JOIN Reseñas r ON r.ReservaID = res.ReservaID
+WHERE r.Visible = TRUE
+GROUP BY h.HotelID, h.Nombre;
+
+-- 3. Vista de habitaciones que nunca han sido reservadas
+CREATE OR REPLACE VIEW Vista_HabitacionesNoReservadas AS
+SELECT 
+  h.HabitacionID,
+  h.HotelID,
+  h.NumeroHabitacion,
+  h.TipoHabitacionID,
+  h.PrecioPorNoche,
+  h.Estado
+FROM Habitaciones h
+LEFT JOIN Reservas r ON h.HabitacionID = r.HabitacionID
+WHERE r.ReservaID IS NULL;
+
+-- 4. Vista de ingresos por hotel en el último mes
+CREATE OR REPLACE VIEW Vista_IngresosUltimoMes AS
+SELECT
+  h.HotelID,
+  ho.Nombre AS NombreHotel,
+  SUM(f.MontoTotal) AS TotalFacturadoPagado
+FROM Facturas f
+JOIN Reservas r ON f.ReservaID = r.ReservaID
+JOIN Habitaciones h ON r.HabitacionID = h.HabitacionID
+JOIN Hoteles ho ON h.HotelID = ho.HotelID
+WHERE f.EstadoPago = 'Pagado'
+  AND f.FechaEmision >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+GROUP BY h.HotelID, ho.Nombre;
+
+-- 5. Vista de promociones activas y número de usos
+CREATE OR REPLACE VIEW Vista_PromocionesActivasConUso AS
+SELECT
+  p.PromocionID,
+  p.CodigoPromo,
+  p.Descripcion,
+  p.DescuentoPorcentaje,
+  p.DescuentoFijo,
+  COUNT(rp.ReservaID) AS VecesUsada
+FROM Promociones p
+LEFT JOIN ReservaPromociones rp ON p.PromocionID = rp.PromocionID
+WHERE p.Activa = TRUE
+GROUP BY
+  p.PromocionID,
+  p.CodigoPromo,
+  p.Descripcion,
+  p.DescuentoPorcentaje,
+  p.DescuentoFijo;
+
+-- 6. Vista de ocupación actual por hotel
+CREATE OR REPLACE VIEW Vista_OcupacionActualPorHotel AS
+SELECT 
+  h.HotelID,
+  h.Nombre AS NombreHotel,
+  COUNT(DISTINCT hab.HabitacionID) AS TotalHabitaciones,
+  COUNT(DISTINCT r.HabitacionID) AS HabitacionesOcupadas,
+  ROUND(
+    COUNT(DISTINCT r.HabitacionID) / COUNT(DISTINCT hab.HabitacionID) * 100, 
+    2
+  ) AS PorcentajeOcupacion
+FROM Hoteles h
+JOIN Habitaciones hab ON hab.HotelID = h.HotelID
+LEFT JOIN Reservas r ON r.HabitacionID = hab.HabitacionID
+  AND CURDATE() BETWEEN r.FechaCheckIn AND r.FechaCheckOut
+  AND r.EstadoReserva = 'Confirmada'
+GROUP BY h.HotelID, h.Nombre;
+
+-- ==========================================
+-- FUNCTION + PROCEDURE
+-- ==========================================
+
+-- Función para obtener ID de promoción por código
+DROP FUNCTION IF EXISTS ObtenerIDPromocionPorCodigo;
+DELIMITER //
+CREATE FUNCTION ObtenerIDPromocionPorCodigo(codigo VARCHAR(50))
+RETURNS INT
+READS SQL DATA
+BEGIN
+  DECLARE idPromo INT;
+
+  SELECT PromocionID INTO idPromo
+  FROM Promociones
+  WHERE CodigoPromo = codigo
+  LIMIT 1;
+
+  RETURN idPromo;
+END;
+//
+DELIMITER ;
+
+-- Procedimiento para crear reserva + factura y aplicar promoción
+DROP PROCEDURE IF EXISTS CrearReserva;
+DELIMITER //
+CREATE PROCEDURE CrearReserva (
+  IN p_HabitacionID INT,
+  IN p_ClienteID INT,
+  IN p_FechaCheckIn DATE,
+  IN p_FechaCheckOut DATE,
+  IN p_CodigoPromo VARCHAR(50),
+  OUT o_ReservaID INT,
+  OUT o_FacturaID INT,
+  OUT o_Mensaje VARCHAR(255)
+)
+BEGIN
+  DECLARE v_Dias INT;
+  DECLARE v_PrecioPorNoche DECIMAL(10,2);
+  DECLARE v_MontoTotal DECIMAL(10,2);
+  DECLARE v_DescuentoPorcentaje DECIMAL(5,2);
+  DECLARE v_DescuentoFijo DECIMAL(10,2);
+  DECLARE v_PromocionID INT;
+
+  SET v_PromocionID = ObtenerIDPromocionPorCodigo(p_CodigoPromo);
+
+  IF EXISTS (
+    SELECT 1 FROM Reservas
+    WHERE HabitacionID = p_HabitacionID
+      AND EstadoReserva IN ('Pendiente', 'Confirmada')
+      AND (
+        (FechaCheckIn <= p_FechaCheckOut AND FechaCheckOut >= p_FechaCheckIn)
+        OR (FechaCheckIn <= p_FechaCheckIn AND FechaCheckOut >= p_FechaCheckOut)
+        OR (FechaCheckIn >= p_FechaCheckIn AND FechaCheckOut <= p_FechaCheckOut)
+      )
+  ) THEN
+    SET o_ReservaID = NULL;
+    SET o_FacturaID = NULL;
+    SET o_Mensaje = 'La habitación ya está reservada para esas fechas';
+    LEAVE proc;
+  END IF;
+
+  SELECT PrecioPorNoche INTO v_PrecioPorNoche
+  FROM Habitaciones
+  WHERE HabitacionID = p_HabitacionID;
+
+  SET v_Dias = DATEDIFF(p_FechaCheckOut, p_FechaCheckIn);
+  SET v_MontoTotal = v_PrecioPorNoche * v_Dias;
+
+  IF v_PromocionID IS NOT NULL THEN
+    SELECT DescuentoPorcentaje, DescuentoFijo
+    INTO v_DescuentoPorcentaje, v_DescuentoFijo
+    FROM Promociones
+    WHERE PromocionID = v_PromocionID;
+
+    IF v_DescuentoPorcentaje IS NOT NULL THEN
+      SET v_MontoTotal = v_MontoTotal * (1 - v_DescuentoPorcentaje / 100);
+    END IF;
+
+    IF v_DescuentoFijo IS NOT NULL THEN
+      SET v_MontoTotal = v_MontoTotal - v_DescuentoFijo;
+    END IF;
+  END IF;
+
+  INSERT INTO Reservas (HabitacionID, ClienteID, FechaCheckIn, FechaCheckOut, EstadoReserva)
+  VALUES (p_HabitacionID, p_ClienteID, p_FechaCheckIn, p_FechaCheckOut, 'Confirmada');
+
+  SET o_ReservaID = LAST_INSERT_ID();
+
+  INSERT INTO Facturas (ReservaID, FechaEmision, MontoTotal, EstadoPago)
+  VALUES (o_ReservaID, CURDATE(), v_MontoTotal, 'Pendiente');
+
+  SET o_FacturaID = LAST_INSERT_ID();
+
+  IF v_PromocionID IS NOT NULL THEN
+    INSERT INTO ReservaPromociones (ReservaID, PromocionID)
+    VALUES (o_ReservaID, v_PromocionID);
+  END IF;
+
+  SET o_Mensaje = 'Reserva y factura creadas correctamente';
+END;
+//
+DELIMITER ;

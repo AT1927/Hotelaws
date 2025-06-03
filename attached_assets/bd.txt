@@ -1,0 +1,174 @@
+DROP DATABASE IF EXISTS enchantstay;
+
+-- Paso 2: Crear la base de datos
+CREATE DATABASE enchantstay CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Paso 3: Seleccionarla
+USE enchantstay;
+
+-- Paso 4: Crear las tablas
+
+CREATE TABLE Clientes (
+    ClienteID INT PRIMARY KEY AUTO_INCREMENT,
+    Nombre VARCHAR(50),
+    Apellido VARCHAR(50),
+    Email VARCHAR(100) UNIQUE,
+    Telefono VARCHAR(20),
+    Direccion TEXT,
+    FechaRegistro DATETIME DEFAULT CURRENT_TIMESTAMP,
+    Preferencias TEXT
+);
+
+CREATE TABLE Hoteles (
+    HotelID INT PRIMARY KEY AUTO_INCREMENT,
+    Nombre VARCHAR(100),
+    Direccion TEXT,
+    Ciudad VARCHAR(50),
+    Pais VARCHAR(50),
+    Telefono VARCHAR(20),
+    EmailContacto VARCHAR(100),
+    CategoriaEstrellas TINYINT,
+    DescripcionGeneral TEXT
+);
+
+CREATE TABLE TiposHabitacion (
+    TipoHabitacionID INT PRIMARY KEY AUTO_INCREMENT,
+    NombreTipo VARCHAR(50),
+    Descripcion TEXT,
+    CapacidadMax INT,
+    PrecioBase DECIMAL(10,2)
+);
+
+CREATE TABLE Servicios (
+    ServicioID INT PRIMARY KEY AUTO_INCREMENT,
+    NombreServicio VARCHAR(50),
+    DescripcionServicio TEXT
+);
+
+CREATE TABLE HotelServicios (
+    HotelID INT,
+    ServicioID INT,
+    PRIMARY KEY (HotelID, ServicioID),
+    FOREIGN KEY (HotelID) REFERENCES Hoteles(HotelID),
+    FOREIGN KEY (ServicioID) REFERENCES Servicios(ServicioID)
+);
+
+CREATE TABLE Habitaciones (
+    HabitacionID INT PRIMARY KEY AUTO_INCREMENT,
+    HotelID INT,
+    NumeroHabitacion VARCHAR(10),
+    TipoHabitacionID INT,
+    PrecioPorNoche DECIMAL(10,2),
+    Estado VARCHAR(20),
+    UNIQUE(HotelID, NumeroHabitacion),
+    FOREIGN KEY (HotelID) REFERENCES Hoteles(HotelID),
+    FOREIGN KEY (TipoHabitacionID) REFERENCES TiposHabitacion(TipoHabitacionID)
+);
+
+CREATE TABLE RoomServicios (
+    HabitacionID INT,
+    ServicioID INT,
+    PRIMARY KEY (HabitacionID, ServicioID),
+    FOREIGN KEY (HabitacionID) REFERENCES Habitaciones(HabitacionID),
+    FOREIGN KEY (ServicioID) REFERENCES Servicios(ServicioID)
+);
+
+CREATE TABLE Roles (
+    RolID INT PRIMARY KEY AUTO_INCREMENT,
+    NombreRol VARCHAR(50) UNIQUE,
+    DescripcionRol TEXT
+);
+
+CREATE TABLE Empleados (
+    EmpleadoID INT PRIMARY KEY AUTO_INCREMENT,
+    HotelID INT,
+    RolID INT,
+    Nombre VARCHAR(50),
+    Apellido VARCHAR(50),
+    Email VARCHAR(100) UNIQUE,
+    Telefono VARCHAR(20),
+    FechaContratacion DATE,
+    Salario DECIMAL(10,2),
+    FOREIGN KEY (HotelID) REFERENCES Hoteles(HotelID),
+    FOREIGN KEY (RolID) REFERENCES Roles(RolID)
+);
+
+CREATE TABLE Reservas (
+    ReservaID INT PRIMARY KEY AUTO_INCREMENT,
+    ClienteID INT,
+    HabitacionID INT,
+    EmpleadoID_CheckIn INT,
+    EmpleadoID_CheckOut INT,
+    FechaReserva DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FechaCheckIn DATE,
+    FechaCheckOut DATE,
+    NumeroAdultos INT,
+    NumeroNinos INT DEFAULT 0,
+    EstadoReserva VARCHAR(20) DEFAULT 'Pendiente',
+    CostoTotalEstimado DECIMAL(10,2),
+    FOREIGN KEY (ClienteID) REFERENCES Clientes(ClienteID),
+    FOREIGN KEY (HabitacionID) REFERENCES Habitaciones(HabitacionID),
+    FOREIGN KEY (EmpleadoID_CheckIn) REFERENCES Empleados(EmpleadoID),
+    FOREIGN KEY (EmpleadoID_CheckOut) REFERENCES Empleados(EmpleadoID)
+);
+
+CREATE TABLE Promociones (
+    PromocionID INT PRIMARY KEY AUTO_INCREMENT,
+    CodigoPromo VARCHAR(50) UNIQUE,
+    Descripcion TEXT,
+    DescuentoPorcentaje DECIMAL(5,2),
+    DescuentoFijo DECIMAL(10,2),
+    FechaInicio DATE,
+    FechaFin DATE,
+    Activa BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE ReservaPromociones (
+    ReservaID INT,
+    PromocionID INT,
+    PRIMARY KEY (ReservaID, PromocionID),
+    FOREIGN KEY (ReservaID) REFERENCES Reservas(ReservaID),
+    FOREIGN KEY (PromocionID) REFERENCES Promociones(PromocionID)
+);
+
+CREATE TABLE Reseñas (
+    ReseñaID INT PRIMARY KEY AUTO_INCREMENT,
+    ReservaID INT,
+    Puntuacion DECIMAL(3,2),
+    Comentario TEXT,
+    FechaReseña DATETIME,
+    Visible BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (ReservaID) REFERENCES Reservas(ReservaID)
+);
+
+CREATE TABLE Facturas (
+    FacturaID INT PRIMARY KEY AUTO_INCREMENT,
+    ReservaID INT,
+    EmpleadoID_Emisor INT,
+    FechaEmision DATETIME,
+    MontoTotal DECIMAL(10,2),
+    IVADecimal DECIMAL(5,2),
+    EstadoPago VARCHAR(20) DEFAULT 'Pendiente',
+    FOREIGN KEY (ReservaID) REFERENCES Reservas(ReservaID),
+    FOREIGN KEY (EmpleadoID_Emisor) REFERENCES Empleados(EmpleadoID)
+);
+
+CREATE TABLE ItemsFactura (
+    ItemFacturaID INT PRIMARY KEY AUTO_INCREMENT,
+    FacturaID INT,
+    Concepto TEXT,
+    Cantidad INT DEFAULT 1,
+    PrecioUnitario DECIMAL(10,2),
+    Subtotal DECIMAL(10,2),
+    FOREIGN KEY (FacturaID) REFERENCES Facturas(FacturaID)
+);
+
+CREATE TABLE Pagos (
+    PagoID INT PRIMARY KEY AUTO_INCREMENT,
+    FacturaID INT,
+    FechaPago DATETIME DEFAULT CURRENT_TIMESTAMP,
+    Monto DECIMAL(10,2),
+    MetodoPago VARCHAR(50),
+    ReferenciaPago VARCHAR(100),
+    FOREIGN KEY (FacturaID) REFERENCES Facturas(FacturaID)
+);

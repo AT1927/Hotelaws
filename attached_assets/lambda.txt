@@ -1,0 +1,361 @@
+const express = require('express');
+const serverless = require('serverless-http');
+const cors = require('cors');
+const mysql = require('mysql2/promise');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  ssl: { rejectUnauthorized: false },
+  multipleStatements: true
+});
+
+
+const query = async (sql, params) => {
+  const [rows] = await pool.execute(sql, params);
+  return rows;
+};
+
+// 1. Registrar un nuevo Hotel
+app.post('/api/hotels', async (req, res) => {
+  try {
+    const { Nombre, Direccion, Ciudad, Pais, Telefono, EmailContacto, CategoriaEstrellas, DescripcionGeneral } = req.body;
+
+    // Validación básica: nombre y dirección obligatorios
+    if (!Nombre || !Direccion) {
+      return res.status(400).json({ error: 'Nombre y Dirección son obligatorios' });
+    }
+
+    // Insertar el hotel con los campos correctos
+    const result = await query(
+      `INSERT INTO Hoteles 
+       (Nombre, Direccion, Ciudad, Pais, Telefono, EmailContacto, CategoriaEstrellas, DescripcionGeneral) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        Nombre,
+        Direccion,
+        Ciudad || null,
+        Pais || null,
+        Telefono || null,
+        EmailContacto || null,
+        CategoriaEstrellas || null,
+        DescripcionGeneral || null,
+      ]
+    );
+
+    // Obtener el ID insertado
+    const insertedId = result.insertId;
+
+    // Consultar el hotel recién insertado
+    const hoteles = await query('SELECT * FROM Hoteles WHERE HotelID = ?', [insertedId]);
+
+    if (hoteles.length === 0) {
+      return res.status(404).json({ error: 'Hotel no encontrado después de insertar' });
+    }
+
+    // Responder con el hotel creado
+    res.status(201).json({ message: 'Hotel creado exitosamente', hotel: hoteles[0] });
+  } catch (error) {
+    console.error('Error creando hotel:', error);
+    res.status(500).json({ error: 'Error interno al crear hotel', details: error.message });
+  }
+});
+
+// 2. Añadir nuevo servicio disponible
+app.post('/api/services/add', async (req, res) => {
+  try {
+    const { NombreServicio, DescripcionServicio } = req.body;
+
+    if (!NombreServicio) {
+      return res.status(400).json({ error: 'El nombre del servicio es obligatorio' });
+    }
+
+    const result = await query(
+      'INSERT INTO Servicios (NombreServicio, DescripcionServicio) VALUES (?, ?)',
+      [NombreServicio, DescripcionServicio || null]
+    );
+
+    const insertedId = result.insertId;
+
+    const servicios = await query('SELECT * FROM Servicios WHERE ServicioID = ?', [insertedId]);
+
+    if (servicios.length === 0) {
+      return res.status(404).json({ error: 'Servicio no encontrado después de insertar' });
+    }
+
+    res.status(201).json({ message: 'Servicio creado exitosamente', servicio: servicios[0] });
+  } catch (error) {
+    console.error('Error creando servicio:', error);
+    res.status(500).json({ error: 'Error interno al crear servicio', details: error.message });
+  }
+});
+
+
+app.post('/api/services/assign', async (req, res) => {
+  try {
+    const { HotelID, ServicioID } = req.body;
+
+    if (!HotelID || !ServicioID) {
+      return res.status(400).json({ error: 'HotelID y ServicioID son obligatorios' });
+    }
+
+    // Validar que el hotel existe
+    const hoteles = await query('SELECT * FROM Hoteles WHERE HotelID = ?', [HotelID]);
+    if (hoteles.length === 0) {
+      return res.status(404).json({ error: 'Hotel no encontrado' });
+    }
+
+    // Validar que el servicio existe
+    const servicios = await query('SELECT * FROM Servicios WHERE ServicioID = ?', [ServicioID]);
+    if (servicios.length === 0) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+
+    // Validar que la asociación no exista ya
+    const existing = await query(
+      'SELECT * FROM HotelServicios WHERE HotelID = ? AND ServicioID = ?',
+      [HotelID, ServicioID]
+    );
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'El servicio ya está asociado al hotel' });
+    }
+
+    // Insertar la asociación
+    await query(
+      'INSERT INTO HotelServicios (HotelID, ServicioID) VALUES (?, ?)',
+      [HotelID, ServicioID]
+    );
+
+    res.status(201).json({ message: 'Servicio asociado al hotel exitosamente' });
+  } catch (error) {
+    console.error('Error asociando servicio al hotel:', error);
+    res.status(500).json({ error: 'Error interno al asociar servicio al hotel', details: error.message });
+  }
+});
+
+//4
+app.post('/api/promotions/create', async (req, res) => {
+  try {
+    const {
+      CodigoPromo,
+      Descripcion,
+      DescuentoPorcentaje,
+      DescuentoFijo,
+      FechaInicio,
+      FechaFin,
+      Activa
+    } = req.body;
+
+    const [result] = await query(`
+      INSERT INTO Promociones 
+      (CodigoPromo, Descripcion, DescuentoPorcentaje, DescuentoFijo, FechaInicio, FechaFin, Activa)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [CodigoPromo, Descripcion, DescuentoPorcentaje, DescuentoFijo, FechaInicio, FechaFin, Activa]);
+
+    const [promocion] = await query(`SELECT * FROM Promociones WHERE PromocionID = ?`, [result.insertId]);
+
+    res.status(201).json({
+      message: "Promoción creada exitosamente",
+      promocion
+    });
+
+  } catch (error) {
+    console.error('Error creando promoción:', error);
+    res.status(500).json({ message: 'Error al crear promoción', error: error.message });
+  }
+});
+
+//5
+app.post('/api/employees/register', async (req, res) => {
+  try {
+    const {
+      HotelID,
+      RolID,
+      Nombre,
+      Apellido,
+      Email,
+      Telefono,
+      FechaContratacion,
+      Salario
+    } = req.body;
+
+    const insertResult = await query(`
+      INSERT INTO Empleados 
+      (HotelID, RolID, Nombre, Apellido, Email, Telefono, FechaContratacion, Salario)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [HotelID, RolID, Nombre, Apellido, Email, Telefono, FechaContratacion, Salario]);
+
+    // insertResult.insertId tiene el ID del nuevo empleado insertado
+    const [empleadoRows] = await query(
+      `SELECT * FROM Empleados WHERE EmpleadoID = ?`,
+      [insertResult.insertId]
+    );
+
+    res.status(201).json({
+      message: "Empleado registrado exitosamente",
+      empleado: empleadoRows[0] // Para enviar solo el objeto empleado, no un array
+    });
+
+  } catch (error) {
+    console.error('Error registrando empleado:', error);
+    res.status(500).json({ message: 'Error al registrar empleado', error: error.message });
+  }
+});
+
+//6.
+app.get('/api/habitaciones/disponibles', async (req, res) => {
+  try {
+    const { hotelId, capacidadMin, fechaInicio, fechaFin } = req.query;
+
+    if (!hotelId || !capacidadMin || !fechaInicio || !fechaFin) {
+      return res.status(400).json({ message: 'Faltan parámetros requeridos' });
+    }
+
+    const habitaciones = await query(`
+      SELECT * FROM vw_HabitacionesDisponibles
+      WHERE HotelID = ? 
+        AND CapacidadMax >= ?
+        AND FechaCheckIn = ?
+        AND FechaCheckOut = ?`,
+      [hotelId, capacidadMin, fechaInicio, fechaFin]);
+
+    res.json({ habitaciones });
+  } catch (error) {
+    console.error('Error buscando habitaciones disponibles:', error);
+    res.status(500).json({ message: 'Error buscando habitaciones', error: error.message });
+  }
+});
+
+
+//7
+app.get('/api/hoteles/puntuacion-media', async (req, res) => {
+  try {
+    const data = await query('SELECT * FROM vw_PuntuacionMediaHotel');
+    res.json({
+      message: "Puntuación media por hotel obtenida exitosamente",
+      data
+    });
+  } catch (error) {
+    console.error('Error obteniendo puntuación media:', error);
+    res.status(500).json({ message: 'Error al obtener puntuación media', error: error.message });
+  }
+});
+
+
+//8
+app.get('/api/habitaciones/no-reservadas', async (req, res) => {
+  try {
+    const habitaciones = await query('SELECT * FROM vw_HabitacionesNoReservadas');
+    res.json({
+      message: "Habitaciones sin reservas obtenidas exitosamente",
+      habitaciones
+    });
+  } catch (error) {
+    console.error('Error obteniendo habitaciones sin reservas:', error);
+    res.status(500).json({ message: 'Error al obtener habitaciones sin reservas', error: error.message });
+  }
+});
+
+
+//9
+app.get('/api/hoteles/ingresos-ultimo-mes', async (req, res) => {
+  try {
+    const ingresos = await query('SELECT * FROM vw_IngresosHotelUltimoMes');
+    res.json({
+      message: "Ingresos totales facturados y pagados por hotel en el último mes",
+      ingresos
+    });
+  } catch (error) {
+    console.error('Error obteniendo ingresos por hotel:', error);
+    res.status(500).json({ message: 'Error al obtener ingresos por hotel', error: error.message });
+  }
+});
+
+
+//10
+app.get('/api/promociones/activas-con-uso', async (req, res) => {
+  try {
+    const promociones = await query('SELECT * FROM vw_PromocionesActivasConUso');
+    res.json({
+      message: "Promociones activas con cantidad de usos",
+      promociones
+    });
+  } catch (error) {
+    console.error('Error obteniendo promociones activas:', error);
+    res.status(500).json({ message: 'Error al obtener promociones', error: error.message });
+  }
+});
+
+
+//11
+app.get('/api/hoteles/ocupacion-actual', async (req, res) => {
+  try {
+    const ocupacion = await query('SELECT * FROM vw_OcupacionActualHotel');
+    res.json({
+      message: 'Ocupación actual por hotel',
+      ocupacion
+    });
+  } catch (error) {
+    console.error('Error obteniendo ocupación:', error);
+    res.status(500).json({ message: 'Error al obtener ocupación', error: error.message });
+  }
+});
+
+
+
+//12
+app.post('/api/bookings/complete', async (req, res) => {
+  const {
+    HabitacionID,
+    ClienteID,
+    FechaCheckIn,
+    FechaCheckOut,
+    CodigoPromo = ''  // opcional
+  } = req.body;
+
+  if (!HabitacionID || !ClienteID || !FechaCheckIn || !FechaCheckOut) {
+    return res.status(400).json({ message: 'Faltan parámetros requeridos' });
+  }
+
+  try {
+    const [results] = await query(
+      `CALL CrearReserva(?, ?, ?, ?, ?, @ReservaID, @FacturaID, @Mensaje);
+       SELECT @ReservaID AS ReservaID, @FacturaID AS FacturaID, @Mensaje AS Mensaje;`,
+      [HabitacionID, ClienteID, FechaCheckIn, FechaCheckOut, CodigoPromo]
+    );
+
+  
+    const output = results[1][0]; // { ReservaID, FacturaID, Mensaje }
+
+    if (!output.ReservaID) {
+      return res.status(400).json({ message: output.Mensaje });
+    }
+
+    res.status(201).json({
+      message: output.Mensaje,
+      ReservaID: output.ReservaID,
+      FacturaID: output.FacturaID
+    });
+
+  } catch (error) {
+    console.error('Error creando reserva:', error);
+    res.status(500).json({ message: 'Error interno al crear reserva', error: error.message });
+  }
+});
+
+
+
+app.use((err, req, res, next) => {
+  console.error('Error inesperado:', err);
+  res.status(500).json({ error: 'Error inesperado en el servidor', details: err.message });
+});
+
+module.exports.handler = serverless(app);
