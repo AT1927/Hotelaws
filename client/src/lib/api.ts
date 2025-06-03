@@ -1,4 +1,4 @@
-import { apiRequest } from "./queryClient";
+// API functions for hotel management system
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://en5c7nrd9c.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -56,7 +56,12 @@ export const servicesApi = {
 // Promotions API
 export const promotionsApi = {
   create: async (promotionData: any) => {
-    const response = await apiRequest('POST', `${API_BASE_URL}/api/promotions/create`, promotionData);
+    const response = await fetch(`${API_BASE_URL}/api/promotions/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(promotionData)
+    });
+    if (!response.ok) throw new Error('Error al crear promoción');
     return response.json();
   },
   getActiveWithUsage: async () => {
@@ -69,7 +74,12 @@ export const promotionsApi = {
 // Employees API
 export const employeesApi = {
   register: async (employeeData: any) => {
-    const response = await apiRequest('POST', `${API_BASE_URL}/api/employees/register`, employeeData);
+    const response = await fetch(`${API_BASE_URL}/api/employees/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(employeeData)
+    });
+    if (!response.ok) throw new Error('Error al registrar empleado');
     return response.json();
   },
   getAll: async () => {
@@ -102,7 +112,12 @@ export const roomsApi = {
 // Reservations API
 export const reservationsApi = {
   createComplete: async (reservationData: any) => {
-    const response = await apiRequest('POST', `${API_BASE_URL}/api/bookings/complete`, reservationData);
+    const response = await fetch(`${API_BASE_URL}/api/bookings/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reservationData)
+    });
+    if (!response.ok) throw new Error('Error al crear reserva');
     return response.json();
   }
 };
