@@ -89,6 +89,15 @@ export const employeesApi = {
   }
 };
 
+// Roles API
+export const rolesApi = {
+  getAll: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/roles`);
+    if (!response.ok) throw new Error('Error al cargar roles');
+    return response.json();
+  }
+};
+
 // Rooms API
 export const roomsApi = {
   getAvailable: async (params: { hotelId: number; capacidadMin: number; fechaInicio: string; fechaFin: string }) => {
@@ -118,6 +127,20 @@ export const reservationsApi = {
       body: JSON.stringify(reservationData)
     });
     if (!response.ok) throw new Error('Error al crear reserva');
+    return response.json();
+  },
+  getAll: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/reservations`);
+    if (!response.ok) throw new Error('Error al cargar reservas');
+    return response.json();
+  }
+};
+
+// Clients API
+export const clientsApi = {
+  getAll: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/clients`);
+    if (!response.ok) throw new Error('Error al cargar clientes');
     return response.json();
   }
 };
