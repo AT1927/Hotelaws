@@ -179,6 +179,23 @@ app.get('/api/room-types', async (req, res) => {
   }
 });
 
+// Obtener todas las promociones
+app.get('/api/promotions', async (req, res) => {
+  try {
+    const promociones = await query(`
+      SELECT * FROM Promociones 
+      ORDER BY FechaInicio DESC, PromocionID DESC
+    `);
+    res.json({
+      message: 'Promociones obtenidas exitosamente',
+      promociones
+    });
+  } catch (error) {
+    console.error('Error obteniendo promociones:', error);
+    res.status(500).json({ error: 'Error al obtener promociones', details: error.message });
+  }
+});
+
 // ========================================
 // ENDPOINTS EXISTENTES (CREATE)
 // ========================================
@@ -299,14 +316,24 @@ app.post('/api/promotions/create', async (req, res) => {
       DescuentoFijo,
       FechaInicio,
       FechaFin,
-      Activa
+      Activa = true
     } = req.body;
+
+    if (!CodigoPromo || !Descripcion) {
+      return res.status(400).json({ error: 'CodigoPromo y Descripcion son obligatorios' });
+    }
+
+    // Validar que no exista ya el código promocional
+    const existingPromo = await query('SELECT * FROM Promociones WHERE CodigoPromo = ?', [CodigoPromo]);
+    if (existingPromo.length > 0) {
+      return res.status(409).json({ error: 'Ya existe una promoción con este código' });
+    }
 
     const result = await query(`
       INSERT INTO Promociones 
       (CodigoPromo, Descripcion, DescuentoPorcentaje, DescuentoFijo, FechaInicio, FechaFin, Activa)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [CodigoPromo, Descripcion, DescuentoPorcentaje, DescuentoFijo, FechaInicio, FechaFin, Activa]);
+    `, [CodigoPromo, Descripcion, DescuentoPorcentaje || null, DescuentoFijo || null, FechaInicio, FechaFin, Activa]);
 
     const promocion = await query(`SELECT * FROM Promociones WHERE PromocionID = ?`, [result.insertId]);
 
@@ -317,7 +344,7 @@ app.post('/api/promotions/create', async (req, res) => {
 
   } catch (error) {
     console.error('Error creando promoción:', error);
-    res.status(500).json({ message: 'Error al crear promoción', error: error.message });
+    res.status(500).json({ error: 'Error interno al crear promoción', details: error.message });
   }
 });
 

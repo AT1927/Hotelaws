@@ -55,6 +55,11 @@ export const servicesApi = {
 
 // Promotions API
 export const promotionsApi = {
+  getAll: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/promotions`);
+    if (!response.ok) throw new Error('Error al cargar promociones');
+    return response.json();
+  },
   create: async (promotionData: any) => {
     const response = await fetch(`${API_BASE_URL}/api/promotions/create`, {
       method: 'POST',
